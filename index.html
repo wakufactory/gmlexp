@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width">
+<title>GML explorer</title>
+<script type="text/javascript" src="jtemplate.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script type="text/javascript">
+$ = id => document.getElementById(id)
+let rawdata
+let gml 
+let alldata 
+let map
+
+onload = function() {
+	gml = new PGML()
+	map = new LMap('map')
+	$('b_load').addEventListener("click", ev=>{
+		$('h_msg').innerHTML = "...loading"
+		$('info').innerHTML = "" 
+		$('listc').innerHTML = ""
+		$('detail').innerHTML = "" 
+		loadAjax($('i_src').value).then(d=>{
+			rawdata = d 
+			alldata = gml.parse(d)
+			show(alldata)
+		}).catch(err=> {
+			$('h_msg').innerHTML = err
+		})
+	})
+	$('i_file').addEventListener("input", ev=>{
+		if(ev.target.value!="")
+			$('h_msg').innerHTML = "...loading"
+			$('info').innerHTML = "" 
+			$('listc').innerHTML = ""
+			$('detail').innerHTML = "" 
+			readflie(ev.target).then(d=>{
+				rawdata = d 
+				alldata = gml.parse(d)
+				show(alldata)
+			})
+	})
+
+function load(path) {
+
+}
+function show(data) {
+	data.list.sort((a,b)=>{
+		return (a.lod0 && b.lod0)?(a.lod0[0][0][0]>b.lod0[0][0][0]?-1:1):-1
+	})
+	console.log(data)
+	const t1 =  new JhtmlTemplate($("t_info"))
+	t1.extract("info",data)
+	const t2 =  new JhtmlTemplate($("t_list"))
+	t2.extract("listc",data)
+	$('h_msg').innerHTML = "complete"
+	map.setmap(data.bound)
+	$('listc').querySelectorAll("tr.listitem").forEach(o=>{
+		o.addEventListener("click", ev=>{
+			let idx = ev.target.parentNode.getAttribute("data-idx")
+			const data = alldata.list[idx]
+			if(data.lod1) {
+				data.lod1.bound = gml.boundbox(data.lod1.surface.flat())
+			}
+			console.log(data)
+			console.log(gml.raw[idx])
+			const t =  new JhtmlTemplate($("t_detail"))
+			t.extract("detail",data)
+
+			if(data.lod0) {
+				let lod0 = data.lod0.flat()
+				const bound = gml.boundbox(lod0)
+				map.setMarker([(bound.max[0]+bound.min[0])/2,(bound.max[1]+bound.min[1])/2])
+				map.setbuild(lod0.map(v=>[v[0],v[1]]))
+			}
+		})
+	})
+}
+function readflie(target) {
+	return new Promise((resolve,reject)=> {
+		const files = target.files
+		const reader = new FileReader()
+		reader.onload = (ev) =>{
+	    const xml = reader.result
+			const  parser = new DOMParser()
+	    const dom = parser.parseFromString(xml, 'text/xml')
+	    console.log(dom)
+	    resolve(dom)
+		}
+		reader.readAsText(files[0])	
+	})
+}
+function loadAjax(src,opt) {
+	return new Promise((resolve,reject)=> {
+		const req = new XMLHttpRequest();
+		req.open("get",src,true) ;
+		req.responseType = (opt && opt.type)?opt.type:"document" ;
+		req.onload = ()=> {
+			if(req.status==200) {
+				resolve(req.response) ;
+			} else {
+				reject("Ajax error:"+req.statusText) ;					
+			}
+		}
+		req.onerror = ()=> {
+			reject("Ajax error:"+req.statusText)
+		}
+		req.send() ;
+	})
+}
+} // onload
+
+// parse PLATEAU CityGML
+class PGML {
+parse(doc) {
+	const bound = {lc:this.parseaxis(this.getxml(doc,"gml:boundedBy/gml:lowerCorner")[0])[0],
+		uc:this.parseaxis(this.getxml(doc,"gml:boundedBy/gml:upperCorner")[0])[0]}
+	const m = doc.getElementsByTagName("core:cityObjectMember")
+	this.raw = m 
+	const o = []
+	let lod1poly = 0 
+	let lod2count = 0 
+	let el 
+	for(let i=0;i<m.length;i++) {
+		el = {} 
+		el["addr"] = this.getxml(m[i],"bldg:address/xAL:LocalityName")[0]
+
+		let attr = this.getxml(m[i],"bldg:Building/gen:stringAttribute/gen:value")[0]
+		const at = {id:attr.attr["gml:id"]}
+		at.string = attr.node.map(v=>{return {name:v.attr.name,value:v.node}})
+		el["attr"] = at  
+		const bld = this.getxml(m[i],"uro:buildingRoofEdgeArea")
+		el["bldg"] = {roofarea:bld}
+		let lod0 = this.getxml(m[i],"bldg:lod0RoofEdge/gml:posList")
+		if(lod0.length>0) {
+			if(Array.isArray(lod0[0])) lod0 = lod0[0]
+			lod0 = lod0.map(x=>this.parseaxis(x))
+			el["lod0"] = lod0
+		}
+
+		let lod1 = this.getxml(m[i],"bldg:lod1Solid/gml:posList")
+		if(lod1.length>0) {
+			lod1 = lod1[0]
+			let poly = 0 
+			for(let l=0;l<lod1.length;l++) {
+				lod1[l] = this.parseaxis(lod1[l])
+				poly += lod1[l].length-3
+			}
+			lod1poly += poly 
+			
+			el["lod1"] = {count:lod1.length,poly:poly,surface:lod1,
+				bound:this.boundbox(lod1.flat())}
+			
+		} else console.log(m[i])
+		const lod2 = this.getxml(m[i],"bldg:lod2Solid/gml:surfaceMember")
+		if(lod2.length>0) {
+			el["lod2"] = {count:lod2[0].length,surface:lod2[0]}
+			el["hazlod2"] = "L2"
+			lod2count++ 
+//			const bound = getxml(m[i],"bldg:RoofSurface/gml:Polygon/gml:LinearRing/gml:posList")
+		}
+
+		o.push(el)
+	}
+/*
+	const tex = doc.getElementsByTagName("app:ParameterizedTexture")
+	for(let i=0;i<tex.length;i++) {
+		const tiff = getxml(tex[i],"app:imageURI")
+		const uv = getxml(tex[i],"app:target/app:textureCoordinates")
+		console.log(tiff) 
+		console.log(uv)
+	}
+*/	
+	const list  = {bound:bound,count:o.length,lod2count:lod2count,lod1poly:lod1poly,list:o}
+	return list 
+}
+parseaxis(str) {
+	const s = str.toString().split(" ")
+	const r = []
+	for(let i=0;i<s.length;i+=3)
+	 r.push([parseFloat(s[i]),parseFloat(s[i+1]),parseFloat(s[i+2])])
+	return r 
+}
+boundbox(ax) {
+	return ax.reduce((a,v)=>{
+		if(v[0]>a.max[0]) a.max[0] = v[0]
+		if(v[1]>a.max[1]) a.max[1] = v[1]
+		if(v[2]>a.max[2]) a.max[2] = v[2]
+		if(v[0]<a.min[0]) a.min[0] = v[0]
+		if(v[1]<a.min[1]) a.min[1] = v[1]
+		if(v[2]<a.min[2]) a.min[2] = v[2]
+		return a 
+	},{min:[90,180,4000],max:[0,0,-100]})
+}
+getxml(doc,tagpath) {
+	const tags = tagpath.split("/")
+	function attr(attr) {
+		const at = {}
+		for(let i=0;i<attr.length;i++) at[attr[i].name] = attr[i].textContent 
+		return at
+	}
+	function query(base,tags) {
+		const tt = tags.slice()
+		const sel = tt.shift()
+		const ttl = tt.length 
+		let tl = []
+		const el = base.getElementsByTagName(sel)
+		for(let i=0;i<el.length;i++) {
+			if(ttl>0) {
+				if(el[i].attributes.length>0)
+					tl.push({attr:attr(el[i].attributes),node:query(el[i],tt)})
+				else tl.push(query(el[i],tt))
+			} else {
+				if(el[i].attributes.length>0) 
+					tl.push({attr:attr(el[i].attributes),html:el[i].innerHTML})
+				else tl.push(el[i].innerHTML)
+			}
+		}
+		return (ttl>0)?tl:((tl.length>1)?tl:tl[0])
+	}
+	return query(doc,tags)
+}
+} //PGML
+
+// draw map using leaflet
+class LMap {
+constructor(tgt) {
+	this.map = L.map(tgt)
+	this.buildline = null
+	this.marker = null
+	this.arealine = null
+	const MapLayer = L.GridLayer.extend({
+
+	 createTile: function(coords,done){
+	 	const maxz = 18
+		let x = coords.x
+		let y = coords.y 
+		let z = coords.z 
+		let can,ctx
+		let zf = 0 
+		if(z >maxz) {
+			zf = 2 ** (z-maxz) 
+			z = maxz
+			x = Math.floor(x/zf)
+			y = Math.floor(y/zf)
+			can = L.DomUtil.create('canvas', 'leaflet-tile');
+			const size = this.getTileSize();
+			can.width = size.x
+			can.height = size.y
+			ctx = can.getContext("2d")
+		}
+		let img = new Image()
+		img.src = `https://cyberjapandata.gsi.go.jp/xyz/pale/${z}/${x}/${y}.png`
+		let err = false 
+		img.onload = ()=>{
+			if(zf==0) done(err,img)
+			else {
+				let dx = (coords.x - x*zf)*can.width/zf
+				let dy = (coords.y - y*zf)*can.height/zf
+				ctx.drawImage(img,dx,dy,img.width/zf,img.height/zf,0,0,can.width,can.height)
+				done(err,can) 
+			}
+		}
+		img.onerror = (ev) =>{
+			console.log("err")
+			done(true)
+		}
+		return (zf!=0)?can:img
+	}
+ })
+ const maplayer = new MapLayer({attribution: "<a href='https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html' target='_blank'>国土地理院</a>"}) 
+ maplayer.addTo(this.map)	
+ this.map.setView([35.681382, 139.766084], 12)
+ this.marker = L.marker([35.681382, 139.766084]).addTo(this.map);
+}
+setMarker(latlng) {
+	this.marker.setLatLng(latlng)
+}
+setbuild(poly) {
+	if(this.buildline) this.buildline.remove()
+	this.buildline = L.polyline(poly, {color: 'blue'}).addTo(this.map)
+}	
+setmap(bound) {
+	const b = bound 
+	if(this.arealine) this.arealine.remove()
+	this.arealine = L.polyline([
+		[b.lc[0],b.lc[1]],[b.lc[0],b.uc[1]],[b.uc[0],b.uc[1]],[b.uc[0],b.lc[1]],[b.lc[0],b.lc[1]]
+	]
+	, {color: 'red'}).addTo(this.map)
+	this.map.fitBounds(this.arealine.getBounds());
+}
+
+}//LMap
+</script>
+<link rel="stylesheet" type="text/css" href="">
+<style type="text/css">
+body,html {
+	width:100% ;
+	height:100% ;
+	margin:0;
+}
+div {
+	box-sizing: border-box ;
+	padding:3px ;
+}
+#head {
+	width:100% ;
+	height:3rem ;
+}
+#main {
+	display:flex ;
+	width:100% ;
+	height:calc(100% - 3rem) ;
+}
+#left {
+	width:60% ;
+	height:100% ;
+	display:flex ;
+	flex-direction: column ;
+}
+#leftup {
+	width:100% ;
+	height:50% ;
+	display:flex ;
+	flex-direction: row ;
+}
+#leftdn {
+	width:100% ;
+	height:50% ;
+}
+#map {
+	width:100% ;
+	height:100% ;
+}
+#info{
+	width:35% ;
+}
+#list {
+	width:65% ;
+	height:100% ;
+}
+#listc {
+	width:100%;
+	height:100% ;
+	overflow-y:scroll;
+}
+#right {
+	width:40% ;
+	height:100% ;
+}
+div.template {
+	display:none ;
+}
+.listitem {
+	cursor:pointer ;
+}
+tr {
+	border-collapse: collapse;
+}
+td {
+	border-bottom: 1px solid gray ;
+}
+</style>
+</head>
+<body>
+<div class=template id=t_info>
+<ul>
+<li>buildings: [val count]</li>
+<li>lod2　count: [val lod2count]</li>
+<li>lod1　△poly: [val lod1poly]</li>
+<li>bound min [val bound/lc/0]<br/>[val bound/lc/1]<br/>[val bound/lc/2]<br/></li>
+<li>bound max [val bound/uc/0]<br/>[val bound/uc/1]<br/>[val bound/uc/2]<br/></li>
+</ul>
+</div>
+
+<div class=template id=t_list>
+<table>
+<!--[each list]-->
+<tr class=listitem data-idx="[idx list]" >
+<td>[val list/attr/string/0/value]</td>
+<td>[val list/addr/html]</td>
+<td>[val list/lod1/count]</td>
+<td>[val list/hazlod2]</td>
+</tr>
+<!--[/each]-->
+</table>
+</div>
+
+<div class=template id=t_detail>
+<table>
+<tr><td>uuid</td><td>[val attr/id]</td></tr>
+<tr><td>address</td><td>[val addr/html]</td></tr>
+<!--[each attr/string]-->
+<tr><td>[val attr/string/name]</td><td>[val attr/string/value]</td></tr>
+<!--[/each]-->
+<tr><td>roof area</td><td>[val bldg/roofarea/html]</td></tr>
+</table>
+<br/>
+<table>
+<tr><td>bound min</td><td>[val lod1/bound/min/0]<br/> [val lod1/bound/min/1]<br/> [val lod1/bound/min/2]</td></tr>
+<tr><td>bound max</td><td>[val lod1/bound/max/0]<br/> [val lod1/bound/max/1]<br/> [val lod1/bound/max/2]</td></tr>
+<tr><td>lod1 surface</td><td>[val lod1/count]</td></tr>
+<tr><td>lod1 △poly</td><td>[val lod1/poly]</td></tr>
+<!--[def hazlod2]-->
+<tr><td>lod2 surface</td><td>[val lod2/count]</td></tr>
+<!--[/def]-->
+</table>
+</div>
+
+<div id=head>
+url:<input type=text size=50 id=i_src value=""><button id=b_load>LOAD</button> or <input type=file id=i_file><span id=h_msg></span>
+</div>
+<div id=main>
+<div id=left>
+<div id=leftup>
+  <div id=info></div>
+<div id=list>
+<div id=listc></div>
+</div>
+</div>
+<div id=leftdn>
+<div id=map></div>
+</div>
+</div>
+<div id=right>
+<div id=detail></div>
+</div>
+</div>
+</body>
+</html>
