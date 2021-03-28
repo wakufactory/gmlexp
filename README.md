@@ -5,7 +5,7 @@ GML file explorer
 
 Webブラウザで動作します。ローカルファイルの.gmlを読み込んで解析します。
 
-[github page](https://www.mlit.go.jp/plateau/)でも使えます。
+[github page](https://wakufactory.github.io/gmlexp/index.html)でも使えます。
 
  - 配布されているCityGMLのうち建物データ(bldg)のみに対応しています。
  - パーサーは手抜きです。全てのgml仕様を満たす物ではありません。
