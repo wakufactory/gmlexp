@@ -47,14 +47,15 @@ function load(path) {
 
 }
 function show(data) {
-	data.list.sort((a,b)=>{
+	const slist = data.list.slice()
+	slist.sort((a,b)=>{
 		return (a.lod0 && b.lod0)?(a.lod0[0][0][0]>b.lod0[0][0][0]?-1:1):-1
 	})
 	console.log(data)
 	const t1 =  new JhtmlTemplate($("t_info"))
 	t1.extract("info",data)
 	const t2 =  new JhtmlTemplate($("t_list"))
-	t2.extract("listc",data)
+	t2.extract("listc",{list:slist})
 	$('h_msg').innerHTML = "complete"
 	map.setmap(data.bound)
 	$('listc').querySelectorAll("tr.listitem").forEach(o=>{
@@ -124,7 +125,7 @@ parse(doc) {
 	let lod2count = 0 
 	let el 
 	for(let i=0;i<m.length;i++) {
-		el = {} 
+		el = {idx:i} 
 		el["addr"] = this.getxml(m[i],"bldg:address/xAL:LocalityName")[0]
 
 		let attr = this.getxml(m[i],"bldg:Building/gen:stringAttribute/gen:value")[0]
@@ -132,7 +133,11 @@ parse(doc) {
 		at.string = attr.node.map(v=>{return {name:v.attr.name,value:v.node}})
 		el["attr"] = at  
 		const bld = this.getxml(m[i],"uro:buildingRoofEdgeArea")
-		el["bldg"] = {roofarea:bld}
+		const zone = this.getxml(m[i],"uro:districtsAndZonesType")
+		const height = this.getxml(m[i],"bldg:measuredHeight")
+		const name = this.getxml(m[i],"gml:name")
+		
+		el["bldg"] = {roofarea:bld,zoneType:zone,height:height,name:name}
 		let lod0 = this.getxml(m[i],"bldg:lod0RoofEdge/gml:posList")
 		if(lod0.length>0) {
 			if(Array.isArray(lod0[0])) lod0 = lod0[0]
@@ -378,7 +383,7 @@ td {
 <div class=template id=t_list>
 <table>
 <!--[each list]-->
-<tr class=listitem data-idx="[idx list]" >
+<tr class=listitem data-idx="[val list/idx]" >
 <td>[val list/attr/string/0/value]</td>
 <td>[val list/addr/html]</td>
 <td>[val list/lod1/count]</td>
@@ -390,12 +395,15 @@ td {
 
 <div class=template id=t_detail>
 <table>
+<tr><td>name</td><td>[val bldg/name/1]</td></tr>
 <tr><td>uuid</td><td>[val attr/id]</td></tr>
 <tr><td>address</td><td>[val addr/html]</td></tr>
 <!--[each attr/string]-->
 <tr><td>[val attr/string/name]</td><td>[val attr/string/value]</td></tr>
 <!--[/each]-->
 <tr><td>roof area</td><td>[val bldg/roofarea/html]</td></tr>
+<tr><td>height</td><td>[val bldg/height/html]</td></tr>
+<tr><td>zone type</td><td>[val bldg/zoneType/html]</td></tr>
 </table>
 <br/>
 <table>
