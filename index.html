@@ -7,16 +7,31 @@
 <script type="text/javascript" src="jtemplate.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
 <script type="text/javascript">
 $ = id => document.getElementById(id)
 let rawdata
 let gml 
 let alldata 
 let map
+let fname 
 
 onload = function() {
 	gml = new PGML()
 	map = new LMap('map')
+	AFRAME.registerComponent('sinit',{
+		init:function() {
+			console.log("afinit")
+			this.el.addEventListener("wheel", ev=>{
+				const z = ev.deltaY
+				const pos = this.el.querySelector("a-camera").getAttribute("position")
+				pos.y += z*0.1
+				pos.z += z*0.1
+				this.el.querySelector("a-camera").setAttribute("position",pos)
+			})
+		}
+	})
+	// ajax load
 	$('b_load').addEventListener("click", ev=>{
 		$('h_msg').innerHTML = "...loading"
 		$('info').innerHTML = "" 
@@ -30,8 +45,11 @@ onload = function() {
 			$('h_msg').innerHTML = err
 		})
 	})
+	// file load
+	fname = "" 
 	$('i_file').addEventListener("input", ev=>{
 		if(ev.target.value!="")
+			fname = ev.target.files[0].name
 			$('h_msg').innerHTML = "...loading"
 			$('info').innerHTML = "" 
 			$('listc').innerHTML = ""
@@ -42,15 +60,38 @@ onload = function() {
 				show(alldata)
 			})
 	})
+	// export obj file 
+	$('b_mkall').addEventListener("click", ev=>{
+		const bound = alldata.bound 
+		const obj = new OBJM([bound.center[0],bound.center[1],0])
+		alldata.list.forEach(o=>{
+			if(!o.lod1) return 
+			opt = {} 
+			if(o.attr) {
+				opt.meta = {bid:o.attr.bid}
+				opt.group = o.attr.bid
+			}
+			if(o.lod1) {
+				opt.meta.lat=o.lod1.bound.center[0]
+				opt.meta.lng=o.lod1.bound.center[1]
+				opt.meta.height=o.lod1.bound.center[2]
+			}
+			obj.add(o.lod1.surface,opt)
+		})
+		const r = obj.makeobj({meta:{source:fname,lat:bound.center[0],lng:bound.center[1]}})
+		$('a_downall').download = fname.replace(".gml",".obj")
+		$('a_downall').href = "data:text/plain;charset=UTF-8,"+r
+	})
+	
 
-function load(path) {
-
-}
 function show(data) {
 	const slist = data.list.slice()
 	slist.sort((a,b)=>{
-		return (a.lod0 && b.lod0)?(a.lod0[0][0][0]>b.lod0[0][0][0]?-1:1):-1
+		if(!a.lod1) return 1
+		if(!b.lod1) return -1
+		return a.lod1.bound.max[0]>b.lod1.bound.max[0]?-1:1
 	})
+	slist.map((o,i)=>(o.sidx=i,o))
 	console.log(data)
 	const t1 =  new JhtmlTemplate($("t_info"))
 	t1.extract("info",data)
@@ -58,13 +99,13 @@ function show(data) {
 	t2.extract("listc",{list:slist})
 	$('h_msg').innerHTML = "complete"
 	map.setmap(data.bound)
-	$('listc').querySelectorAll("tr.listitem").forEach(o=>{
+	let selected 
+	let objfile
+	const listitem = $('listc').querySelectorAll("tr.listitem")
+	listitem.forEach(o=>{
 		o.addEventListener("click", ev=>{
 			let idx = ev.target.parentNode.getAttribute("data-idx")
 			const data = alldata.list[idx]
-			if(data.lod1) {
-				data.lod1.bound = gml.boundbox(data.lod1.surface.flat())
-			}
 			console.log(data)
 			console.log(gml.raw[idx])
 			const t =  new JhtmlTemplate($("t_detail"))
@@ -73,9 +114,49 @@ function show(data) {
 			if(data.lod0) {
 				let lod0 = data.lod0.flat()
 				const bound = gml.boundbox(lod0)
-				map.setMarker([(bound.max[0]+bound.min[0])/2,(bound.max[1]+bound.min[1])/2])
+				map.setMarker([bound.center[0],bound.center[1]])
 				map.setbuild(lod0.map(v=>[v[0],v[1]]))
 			}
+			if(data.lod1) {
+				const l1 = data.lod1 
+				const obj = new OBJM([l1.bound.center[0],l1.bound.center[1],l1.bound.min[2]])
+				obj.add(l1.surface)
+				objfile = obj.makeobj({meta:
+					{source:fname,bid:data.attr.bid, lat:l1.bound.center[0],lng:l1.bound.center[1],height:l1.bound.min[2]}})
+				const objpath = "data:text/plane;charset=UTF-8,"+objfile
+				data.lod1.objpath = objpath 
+				$('a_down1').href = objpath 
+				$('a_down1').download = data.attr.bid+"-lod1.obj"
+				
+				$('obj').setAttribute("src",objpath)
+				$('objm').setAttribute("obj-model","obj", "#obj")
+			}
+			if(data.lod2) {
+				const bound = data.lod2.bound 
+				const obj = new OBJM([bound.center[0],bound.center[1],bound.min[2]])
+				for(let s in data.lod2.surface) {
+					obj.add(data.lod2.surface[s].reduce((a,v)=>{a.push(v.node[0].poly);return a},[]),
+						{group:s})
+				}
+				objfile = obj.makeobj({meta:
+					{source:fname,bid:data.attr.bid, lat:bound.center[0],lng:bound.center[1],height:bound.min[2]}})
+				const objpath = "data:text/plane;charset=UTF-8,"+objfile
+				data.lod2.objpath = objpath 
+				$('a_down2').href = objpath 
+				$('a_down2').download = data.attr.bid+"-lod2.obj"
+			}
+			if(selected) selected.classList.remove("selected")
+			ev.target.parentNode.classList.add("selected")
+			selected = ev.target.parentNode
+			
+			$('b_vlod1').addEventListener("click", ev=>{
+				$('obj').setAttribute("src",data.lod1.objpath)
+				$('objm').setAttribute("obj-model","obj", "#obj")
+			})
+			$('b_vlod2').addEventListener("click", ev=>{
+				$('obj').setAttribute("src",data.lod2.objpath)
+				$('objm').setAttribute("obj-model","obj", "#obj")
+			})
 		})
 	})
 }
@@ -87,7 +168,6 @@ function readflie(target) {
 	    const xml = reader.result
 			const  parser = new DOMParser()
 	    const dom = parser.parseFromString(xml, 'text/xml')
-	    console.log(dom)
 	    resolve(dom)
 		}
 		reader.readAsText(files[0])	
@@ -118,33 +198,46 @@ class PGML {
 parse(doc) {
 	const bound = {lc:this.parseaxis(this.getxml(doc,"gml:boundedBy/gml:lowerCorner")[0])[0],
 		uc:this.parseaxis(this.getxml(doc,"gml:boundedBy/gml:upperCorner")[0])[0]}
+	bound.center = [(bound.uc[0]+bound.lc[0])/2,(bound.uc[1]+bound.lc[1])/2,(bound.uc[2]+bound.lc[2])/2]
 	const m = doc.getElementsByTagName("core:cityObjectMember")
 	this.raw = m 
 	const o = []
 	let lod1poly = 0 
+	let lod2poly = 0
 	let lod2count = 0 
 	let el 
 	for(let i=0;i<m.length;i++) {
 		el = {idx:i} 
-		el["addr"] = this.getxml(m[i],"bldg:address/xAL:LocalityName")[0]
-
-		let attr = this.getxml(m[i],"bldg:Building/gen:stringAttribute/gen:value")[0]
+		// get metadata
+		const attr = this.getxml(m[i],"bldg:Building/gen:stringAttribute/gen:value")[0]
 		const at = {id:attr.attr["gml:id"]}
-		at.string = attr.node.map(v=>{return {name:v.attr.name,value:v.node}})
-		el["attr"] = at  
-		const bld = this.getxml(m[i],"uro:buildingRoofEdgeArea")
+		let bid = "" 
+		at.string = attr.node.map(v=>{
+			if(v.attr.name=="建物ID") bid= v.node[0] ;
+			return {name:v.attr.name,value:v.node[0]}
+		})
+		at.bid = bid 
+		const addr = this.getxml(m[i],"bldg:address/xAL:LocalityName")[0]
+		if(addr) at.addr = addr[0] 
+		const roof = this.getxml(m[i],"uro:buildingRoofEdgeArea")
+		if(roof) at.buildingRoofEdgeArea = roof[0]
 		const zone = this.getxml(m[i],"uro:districtsAndZonesType")
+		if(zone) at.districtsAndZonesType = zone[0]
 		const height = this.getxml(m[i],"bldg:measuredHeight")
-		const name = this.getxml(m[i],"gml:name")
+		if(height) at.measuredHeight = height[0]
+		let name = this.getxml(m[i],"gml:name")
+		if(Array.isArray(name)) name = name[0]
+		if(name) at.name = name
+		el["attr"] = at 
 		
-		el["bldg"] = {roofarea:bld,zoneType:zone,height:height,name:name}
+		//get LOD0
 		let lod0 = this.getxml(m[i],"bldg:lod0RoofEdge/gml:posList")
 		if(lod0.length>0) {
 			if(Array.isArray(lod0[0])) lod0 = lod0[0]
 			lod0 = lod0.map(x=>this.parseaxis(x))
 			el["lod0"] = lod0
 		}
-
+		//get LOD1
 		let lod1 = this.getxml(m[i],"bldg:lod1Solid/gml:posList")
 		if(lod1.length>0) {
 			lod1 = lod1[0]
@@ -158,29 +251,66 @@ parse(doc) {
 			el["lod1"] = {count:lod1.length,poly:poly,surface:lod1,
 				bound:this.boundbox(lod1.flat())}
 			
-		} else console.log(m[i])
+		} 
+// 	else console.log(m[i])
+		// get LOD2
 		const lod2 = this.getxml(m[i],"bldg:lod2Solid/gml:surfaceMember")
 		if(lod2.length>0) {
-			el["lod2"] = {count:lod2[0].length,surface:lod2[0]}
+			el["lod2"] = {count:lod2[0].length,surfaceid:lod2[0].map(v=>v.attr['xlink:href'])}
 			el["hazlod2"] = "L2"
 			lod2count++ 
-//			const bound = getxml(m[i],"bldg:RoofSurface/gml:Polygon/gml:LinearRing/gml:posList")
+			if(1) {
+				el.lod2.surface = {}
+				const roofs = this.getxml(m[i],"bldg:RoofSurface/gml:Polygon/gml:LinearRing/gml:posList")
+				const walls = this.getxml(m[i],"bldg:WallSurface/gml:Polygon/gml:LinearRing/gml:posList")
+				const grounds = this.getxml(m[i],"bldg:GroundSurface/gml:Polygon/gml:LinearRing/gml:posList")
+				const outers = this.getxml(m[i],"bldg:OuterCeilingSurface/gml:Polygon/gml:LinearRing/gml:posList")
+				const outerf = this.getxml(m[i],"bldg:OuterFloorSurface/gml:Polygon/gml:LinearRing/gml:posList")
+				const closures = this.getxml(m[i],"bldg:ClosureSurface/gml:Polygon/gml:LinearRing/gml:posList")
+				const sl = []
+				let poly = 0
+				const parselod2 = (surface)=> {
+					return surface.map(v=>{
+						const ret = v.node[0]
+						ret.id = ret.attr['gml:id']
+						delete(ret.attr)
+						ret.node = ret.node.map(v=>{
+							const p = this.parseaxis(v.node)
+							sl.push(p)
+							poly += p.length-3
+							return {id:v.attr['gml:id'],poly:p}})
+						return ret 
+					})
+				}
+				if(roofs[0]) el.lod2.surface.roofs = parselod2(roofs)
+				if(walls[0]) el.lod2.surface.walls = parselod2(walls)
+				if(grounds[0]) el.lod2.surface.grounds = parselod2(grounds)
+				if(outers[0]) el.lod2.surface.outers = parselod2(outers)
+				if(outerf[0]) el.lod2.surface.outerf = parselod2(outerf)
+				if(closures[0]) el.lod2.surface.closures = parselod2(closures)
+				el.lod2.bound = this.boundbox(sl.flat())
+				el.lod2.poly = poly 
+				lod2poly += poly 
+			}
+	//		console.log(bound)
 		}
-
 		o.push(el)
 	}
-/*
-	const tex = doc.getElementsByTagName("app:ParameterizedTexture")
-	for(let i=0;i<tex.length;i++) {
-		const tiff = getxml(tex[i],"app:imageURI")
-		const uv = getxml(tex[i],"app:target/app:textureCoordinates")
-		console.log(tiff) 
-		console.log(uv)
+	const list  = {bound:bound,count:o.length,lod2count:lod2count,lod1poly:lod1poly,lod2poly:lod2poly,list:o}
+	if(0) {
+		// get texture data
+		const tex =[]
+		const texe = doc.getElementsByTagName("app:ParameterizedTexture")
+		for(let i=0;i<texe.length;i++) {
+			const tiff = this.getxml(texe[i],"app:imageURI")
+			const uv = this.getxml(texe[i],"app:target/app:textureCoordinates")
+			tex.push({tiff:tiff,uv:uv})
+		}
+		list.tex = tex
 	}
-*/	
-	const list  = {bound:bound,count:o.length,lod2count:lod2count,lod1poly:lod1poly,list:o}
 	return list 
 }
+
 parseaxis(str) {
 	const s = str.toString().split(" ")
 	const r = []
@@ -189,7 +319,7 @@ parseaxis(str) {
 	return r 
 }
 boundbox(ax) {
-	return ax.reduce((a,v)=>{
+	const b = ax.reduce((a,v)=>{
 		if(v[0]>a.max[0]) a.max[0] = v[0]
 		if(v[1]>a.max[1]) a.max[1] = v[1]
 		if(v[2]>a.max[2]) a.max[2] = v[2]
@@ -198,6 +328,8 @@ boundbox(ax) {
 		if(v[2]<a.min[2]) a.min[2] = v[2]
 		return a 
 	},{min:[90,180,4000],max:[0,0,-100]})
+	b.center = [(b.max[0]+b.min[0])/2,(b.max[1]+b.min[1])/2,(b.max[2]+b.min[2])/2]
+	return b
 }
 getxml(doc,tagpath) {
 	const tags = tagpath.split("/")
@@ -223,11 +355,74 @@ getxml(doc,tagpath) {
 				else tl.push(el[i].innerHTML)
 			}
 		}
-		return (ttl>0)?tl:((tl.length>1)?tl:tl[0])
+		return tl 
 	}
-	return query(doc,tags)
+	const ret = query(doc,tags)
+	return ret 
 }
 } //PGML
+
+//make obj file
+class OBJM {
+constructor(center) {
+	this.center = center 
+	this.object=[]
+	this.vidx = 0
+	this.vertexes = []
+	this.surfaces = []
+}
+add(surface,opt) { 
+	const len = this.latlng2length({lat:this.center[0],lng:this.center[1]})
+	const vl = []
+	const sl = []
+	surface.forEach(s=>{
+		const sf = [] 
+		s.forEach((v,i)=>{
+			if(i==s.length-1) return 
+			vl.push([(v[1]-this.center[1])*len.lng,(v[0]-this.center[0])*len.lat,v[2]-this.center[2]])
+			sf.push(this.vidx+1)
+			this.vidx++	
+		})
+		sl.push(sf)
+	})
+	this.vertexes.push(vl)
+	this.surfaces.push(sl)
+	this.object.push({opt:opt,v:vl,s:sl})
+//	console.log(this.vertexes)
+//	console.log(this.surfaces)
+}
+makeobj(opt) {
+	const l =[]
+	if(opt && opt.meta) l.push(this.setmeta(opt.meta))
+
+	this.object.forEach(o=>{
+		if(o.opt && o.opt.meta) l.push(this.setmeta(o.opt.meta))
+		if(o.opt && o.opt.group) l.push("g "+o.opt.group)
+		o.v.forEach(v=>{
+			l.push("v "+v.map(a=>this.round(a)).join(" "))
+		})
+		o.s.forEach(s=>{
+			l.push("f "+s.join(" "))
+		})
+	})
+
+	return l.join("\n")
+}
+setmeta(c) {
+	return encodeURIComponent("# "+JSON.stringify(c))
+}
+round(v) {
+	let s =  v.toString()
+	const i = s.indexOf(".")
+	if(i>-1) s = s.substr(0,i+3)
+	return s  
+}
+latlng2length(latlng) {
+	const r = 6356752
+	const er = 2*Math.PI*r/360
+	return {lng: Math.cos(latlng.lat / 180 * Math.PI) * er, lat:er}
+}	
+} // OBJM
 
 // draw map using leaflet
 class LMap {
@@ -355,6 +550,20 @@ div {
 	width:40% ;
 	height:100% ;
 }
+#right_up {
+	height:calc(50% - 2rem) ;
+	overflow-y:scroll ;
+}
+#right_mid {
+	height:2rem; 
+}
+#right_dn {
+	height:50% ;
+}
+#af {
+	width:100% ;
+	height:100% ;
+}
 div.template {
 	display:none ;
 }
@@ -364,30 +573,85 @@ div.template {
 tr {
 	border-collapse: collapse;
 }
+tr.selected {
+	background-color:#fee ;
+}
 td {
 	border-bottom: 1px solid gray ;
 }
 </style>
 </head>
 <body>
+<div id=head>
+  url:<input type=text size=60 id=i_src value=""><button id=b_load>LOAD</button> or <input type=file id=i_file><span id=h_msg></span><br/>
+
+  <button id=b_mkall><a href="" id=a_downall download="data-all.obj">download all .obj</a></button>
+</div>
+<div id=main>
+	<div id=left>
+		<div id=leftup>
+		  <div id=info></div>
+			<div id=list>
+				<div id=listc></div>
+			</div>
+		</div>
+		<div id=leftdn>
+			<div id=map></div>
+		</div>
+	</div>
+	<div id=right>
+		<div id=right_up>
+			<div id=detail></div>
+		</div>
+		<div id=right_mid>
+			<button id=b_vlod1>VIEW LOD1</button> <a href="" id=a_down1 download="data.obj">download .obj</a>
+			<button id=b_vlod2>VIEW LOD2</button> <a href="" id=a_down2 download="data.obj">download .obj</a>
+		</div>
+		<div id=right_dn>
+			<div id=af>
+				<a-scene embedded sinit>
+				<a-assets>
+				  	<img id="floortex" src="tex1024.png">
+				    <a-asset-item id="obj" src="">
+				</a-assets>
+				<a-sky color="#4df"></a-sky>
+				<!--floor-->
+				<a-plane position="0 -0.001 0" rotation="-90 0 0" width="20" height="20" material="shader:flat;src: #floortex;repeat:2 2;color:#888"></a-plane>
+					<a-entity id="base" scale="0.1 0.1 0.1" rotation="-90 0 0"
+						animation="property: rotation; to:-90 360 0; easing:linear;loop: true; dur: 10000">
+						<a-entity id=objm obj-model="obj:#obj" material="opacity:1"></a-entity>
+					</a-entity>
+				<a-camera position="0 4 4" rotation="60 0 0"></a-camera>
+				<a-light color="white" position="1 3 2 "></a-light>
+				</a-scene>
+			</div>
+		</div>
+	</div>
+</div>
+
 <div class=template id=t_info>
 <ul>
 <li>buildings: [val count]</li>
 <li>lod2　count: [val lod2count]</li>
 <li>lod1　△poly: [val lod1poly]</li>
-<li>bound min [val bound/lc/0]<br/>[val bound/lc/1]<br/>[val bound/lc/2]<br/></li>
-<li>bound max [val bound/uc/0]<br/>[val bound/uc/1]<br/>[val bound/uc/2]<br/></li>
+<li>lod2　△poly: [val lod2poly]</li>
+<li>bound min [val bound/lc/0] [val bound/lc/1]<br/>[val bound/lc/2]<br/></li>
+<li>bound max [val bound/uc/0] [val bound/uc/1]<br/>[val bound/uc/2]<br/></li>
 </ul>
 </div>
 
 <div class=template id=t_list>
 <table>
 <!--[each list]-->
-<tr class=listitem data-idx="[val list/idx]" >
-<td>[val list/attr/string/0/value]</td>
-<td>[val list/addr/html]</td>
+<tr class=listitem data-idx="[val list/idx]" data-sidx="[val list/sidx]" >
+<td>[val list/attr/bid]</td>
+<td>[val list/attr/addr/html]</td>
 <td>[val list/lod1/count]</td>
-<td>[val list/hazlod2]</td>
+<td>
+<!--[def list/attr/name]-->
+*
+<!--[/def]-->
+[val list/hazlod2]</td>
 </tr>
 <!--[/each]-->
 </table>
@@ -395,46 +659,26 @@ td {
 
 <div class=template id=t_detail>
 <table>
-<tr><td>name</td><td>[val bldg/name/1]</td></tr>
+<tr><td>bound min</td><td>[val lod1/bound/min/0] [val lod1/bound/min/1]<br/> [val lod1/bound/min/2]</td></tr>
+<tr><td>bound max</td><td>[val lod1/bound/max/0] [val lod1/bound/max/1]<br/> [val lod1/bound/max/2]</td></tr>
+<tr><td>lod1 surface</td><td>[val lod1/count] △poly:[val lod1/poly] </td></tr>
+<!--[def hazlod2]-->
+<tr><td>lod2 surface</td><td>[val lod2/count] △poly:[val lod2/poly] </td></tr>
+<!--[/def]-->
+</table>
+<table>
+<tr><td>name</td><td>[val attr/name]</td></tr>
 <tr><td>uuid</td><td>[val attr/id]</td></tr>
-<tr><td>address</td><td>[val addr/html]</td></tr>
+<tr><td>address</td><td>[val attr/addr/html]</td></tr>
+<tr><td>roof area</td><td>[val attr/buildingRoofEdgeArea/html]</td></tr>
+<tr><td>height</td><td>[val attr/measuredHeight/html]</td></tr>
+<tr><td>zone type</td><td>[val attr/districtsAndZonesType/html]</td></tr>
 <!--[each attr/string]-->
 <tr><td>[val attr/string/name]</td><td>[val attr/string/value]</td></tr>
 <!--[/each]-->
-<tr><td>roof area</td><td>[val bldg/roofarea/html]</td></tr>
-<tr><td>height</td><td>[val bldg/height/html]</td></tr>
-<tr><td>zone type</td><td>[val bldg/zoneType/html]</td></tr>
+
 </table>
 <br/>
-<table>
-<tr><td>bound min</td><td>[val lod1/bound/min/0]<br/> [val lod1/bound/min/1]<br/> [val lod1/bound/min/2]</td></tr>
-<tr><td>bound max</td><td>[val lod1/bound/max/0]<br/> [val lod1/bound/max/1]<br/> [val lod1/bound/max/2]</td></tr>
-<tr><td>lod1 surface</td><td>[val lod1/count]</td></tr>
-<tr><td>lod1 △poly</td><td>[val lod1/poly]</td></tr>
-<!--[def hazlod2]-->
-<tr><td>lod2 surface</td><td>[val lod2/count]</td></tr>
-<!--[/def]-->
-</table>
-</div>
-
-<div id=head>
-url:<input type=text size=50 id=i_src value=""><button id=b_load>LOAD</button> or <input type=file id=i_file><span id=h_msg></span>
-</div>
-<div id=main>
-<div id=left>
-<div id=leftup>
-  <div id=info></div>
-<div id=list>
-<div id=listc></div>
-</div>
-</div>
-<div id=leftdn>
-<div id=map></div>
-</div>
-</div>
-<div id=right>
-<div id=detail></div>
-</div>
 </div>
 </body>
 </html>
