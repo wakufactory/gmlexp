@@ -109,7 +109,23 @@ onload = function() {
 			viewmodel(slist[sidx].lod2)
 		}
 	})
-function selitem(sidx) {
+	// map clicked
+	map.map.on('click', ev=>{
+	 const latlng = ev.latlng
+	 const sl = [] 
+	 slist.forEach(v=>{
+		 const bound = v.lod1?v.lod1.bound:v.lod2.bound
+		 if(bound.min[0]<latlng.lat && bound.min[1]<latlng.lng &&
+		 	bound.max[0]>latlng.lat && bound.max[1]>latlng.lng) sl.push(v)
+	 })
+	 if(sl.length>0) {
+		 selitem(sl[0].sidx)
+		 $('dinput').focus()
+		}
+	})
+// set selected item
+function selitem(sel,scroll=true) {
+	sidx = sel
 	data = slist[sidx]
 			console.log(data)
 			const t =  new JhtmlTemplate($("t_detail"))
@@ -131,9 +147,6 @@ function selitem(sidx) {
 				data.lod1.objpath = objpath 
 				$('a_down1').href = objpath 
 				$('a_down1').download = data.attr.bid+"-lod1.obj"
-				
-				$('obj').setAttribute("src",objpath)
-				$('objm').setAttribute("obj-model","obj", "#obj")
 			}
 			if(data.lod2) {
 				const bound = data.lod2.bound 
@@ -149,11 +162,14 @@ function selitem(sidx) {
 				$('a_down2').href = objpath 
 				$('a_down2').download = data.attr.bid+"-lod2.obj"
 			}
+			if(data.lod2) viewmodel(data.lod2)
+			else if(data.lod1) viewmodel(data.lod1)
 			if(selected) selected.classList.remove("selected")
 			selected = document.querySelectorAll("#listc tr")[sidx]
 			selected.classList.add("selected")
-			selected.scrollIntoView({block:"center"})
+			if(scroll) selected.scrollIntoView({block:"center"})
 }
+// show list
 function show(data) {
 	slist = data.list.slice()
 	slist.sort((a,b)=>{
@@ -178,11 +194,10 @@ function show(data) {
 			let idx = parseInt(ev.target.parentNode.getAttribute("data-idx"))
 			sidx = parseInt(ev.target.parentNode.getAttribute("data-sidx"))
 			console.log(gml.raw[idx])
-			selitem(sidx)
+			selitem(sidx,false)
 			$('dinput').focus()
 		})
 	})
-	
 }
 function readflie(target) {
 	return new Promise((resolve,reject)=> {
@@ -501,6 +516,7 @@ constructor(tgt) {
  maplayer.addTo(this.map)	
  this.map.setView([35.681382, 139.766084], 12)
  this.marker = L.marker([35.681382, 139.766084]).addTo(this.map);
+
 }
 setMarker(latlng) {
 	this.marker.setLatLng(latlng)
