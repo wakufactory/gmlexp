@@ -269,6 +269,7 @@ parse(doc) {
 				const closures = this.getxml(m[i],"bldg:ClosureSurface/gml:Polygon/gml:LinearRing/gml:posList")
 				const sl = []
 				let poly = 0
+				try{
 				const parselod2 = (surface)=> {
 					return surface.map(v=>{
 						const ret = v.node[0]
@@ -282,12 +283,14 @@ parse(doc) {
 						return ret 
 					})
 				}
+
 				if(roofs[0]) el.lod2.surface.roofs = parselod2(roofs)
 				if(walls[0]) el.lod2.surface.walls = parselod2(walls)
 				if(grounds[0]) el.lod2.surface.grounds = parselod2(grounds)
 				if(outers[0]) el.lod2.surface.outers = parselod2(outers)
 				if(outerf[0]) el.lod2.surface.outerf = parselod2(outerf)
 				if(closures[0]) el.lod2.surface.closures = parselod2(closures)
+				} catch(err) {console.log(el);console.log(m[i])}
 				el.lod2.bound = this.boundbox(sl.flat())
 				el.lod2.poly = poly 
 				lod2poly += poly 
