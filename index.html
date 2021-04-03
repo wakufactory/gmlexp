@@ -15,10 +15,6 @@ let gml
 let alldata 
 let map
 let fname 
-
-onload = function() {
-	gml = new PGML()
-	map = new LMap('map')
 	AFRAME.registerComponent('sinit',{
 		init:function() {
 			console.log("afinit")
@@ -31,6 +27,10 @@ onload = function() {
 			})
 		}
 	})
+onload = function() {
+	gml = new PGML()
+	map = new LMap('map')
+
 	// ajax load
 	$('b_load').addEventListener("click", ev=>{
 		$('h_msg').innerHTML = "...loading"
@@ -272,7 +272,7 @@ parse(doc) {
 				try{
 				const parselod2 = (surface)=> {
 					return surface.map(v=>{
-						const ret = v.node[0]
+						const ret = (v.node)?v.node[0]:v[0]
 						ret.id = ret.attr['gml:id']
 						delete(ret.attr)
 						ret.node = ret.node.map(v=>{
@@ -290,7 +290,7 @@ parse(doc) {
 				if(outers[0]) el.lod2.surface.outers = parselod2(outers)
 				if(outerf[0]) el.lod2.surface.outerf = parselod2(outerf)
 				if(closures[0]) el.lod2.surface.closures = parselod2(closures)
-				} catch(err) {console.log(el);console.log(m[i])}
+				} catch(err) {console.log(err);console.log(el);console.log(m[i])}
 				el.lod2.bound = this.boundbox(sl.flat())
 				el.lod2.poly = poly 
 				lod2poly += poly 
