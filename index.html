@@ -148,14 +148,14 @@ function show(data) {
 			if(selected) selected.classList.remove("selected")
 			ev.target.parentNode.classList.add("selected")
 			selected = ev.target.parentNode
-			
+		
 			$('b_vlod1').addEventListener("click", ev=>{
 				$('obj').setAttribute("src",data.lod1.objpath)
-				$('objm').setAttribute("obj-model","obj", "#obj")
+				setTimeout(function(){$('objm').setAttribute("obj-model","obj", "#obj")},500)	
 			})
 			$('b_vlod2').addEventListener("click", ev=>{
 				$('obj').setAttribute("src",data.lod2.objpath)
-				$('objm').setAttribute("obj-model","obj", "#obj")
+				setTimeout(function(){$('objm').setAttribute("obj-model","obj", "#obj")},500)	
 			})
 		})
 	})
