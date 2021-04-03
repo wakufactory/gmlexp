@@ -30,7 +30,9 @@ let fname
 onload = function() {
 	gml = new PGML()
 	map = new LMap('map')
-
+	let sidx = 0
+	let slist 
+	let selected 
 	// ajax load
 	$('b_load').addEventListener("click", ev=>{
 		$('h_msg').innerHTML = "...loading"
@@ -82,32 +84,34 @@ onload = function() {
 		$('a_downall').download = fname.replace(".gml",".obj")
 		$('a_downall').href = "data:text/plain;charset=UTF-8,"+r
 	})
-	
-
-function show(data) {
-	const slist = data.list.slice()
-	slist.sort((a,b)=>{
-		if(!a.lod1) return 1
-		if(!b.lod1) return -1
-		return a.lod1.bound.max[0]>b.lod1.bound.max[0]?-1:1
+	function viewmodel(d) {
+		if(!d) return 
+		$('obj').setAttribute("src",d.objpath)
+		setTimeout(function(){$('objm').setAttribute("obj-model","obj", "#obj")},200)			
+	}
+	$('b_vlod1').addEventListener("click", ev=>{
+		viewmodel(slist[sidx].lod1)
 	})
-	slist.map((o,i)=>(o.sidx=i,o))
-	console.log(data)
-	const t1 =  new JhtmlTemplate($("t_info"))
-	t1.extract("info",data)
-	const t2 =  new JhtmlTemplate($("t_list"))
-	t2.extract("listc",{list:slist})
-	$('h_msg').innerHTML = "complete"
-	map.setmap(data.bound)
-	let selected 
-	let objfile
-	const listitem = $('listc').querySelectorAll("tr.listitem")
-	listitem.forEach(o=>{
-		o.addEventListener("click", ev=>{
-			let idx = ev.target.parentNode.getAttribute("data-idx")
-			const data = alldata.list[idx]
+	$('b_vlod2').addEventListener("click", ev=>{
+		viewmodel(slist[sidx].lod2)
+	})
+	$('dinput').addEventListener("keyup", ev=>{
+		if(ev.keyCode==38 || ev.keyCode==40) {
+			sidx += ev.keyCode-39
+			if(sidx<0) sidx=0
+			if(sidx>=slist.length-1) sidx = slist.length-1
+			selitem(sidx)
+		}
+		if(ev.keyCode==37) {
+			viewmodel(slist[sidx].lod1)
+		}
+		if(ev.keyCode==39) {
+			viewmodel(slist[sidx].lod2)
+		}
+	})
+function selitem(sidx) {
+	data = slist[sidx]
 			console.log(data)
-			console.log(gml.raw[idx])
 			const t =  new JhtmlTemplate($("t_detail"))
 			t.extract("detail",data)
 
@@ -121,7 +125,7 @@ function show(data) {
 				const l1 = data.lod1 
 				const obj = new OBJM([l1.bound.center[0],l1.bound.center[1],l1.bound.min[2]])
 				obj.add(l1.surface)
-				objfile = obj.makeobj({meta:
+				const objfile = obj.makeobj({meta:
 					{source:fname,bid:data.attr.bid, lat:l1.bound.center[0],lng:l1.bound.center[1],height:l1.bound.min[2]}})
 				const objpath = "data:text/plane;charset=UTF-8,"+objfile
 				data.lod1.objpath = objpath 
@@ -138,7 +142,7 @@ function show(data) {
 					obj.add(data.lod2.surface[s].reduce((a,v)=>{a.push(v.node[0].poly);return a},[]),
 						{group:s})
 				}
-				objfile = obj.makeobj({meta:
+				const objfile = obj.makeobj({meta:
 					{source:fname,bid:data.attr.bid, lat:bound.center[0],lng:bound.center[1],height:bound.min[2]}})
 				const objpath = "data:text/plane;charset=UTF-8,"+objfile
 				data.lod2.objpath = objpath 
@@ -146,19 +150,39 @@ function show(data) {
 				$('a_down2').download = data.attr.bid+"-lod2.obj"
 			}
 			if(selected) selected.classList.remove("selected")
-			ev.target.parentNode.classList.add("selected")
-			selected = ev.target.parentNode
-		
-			$('b_vlod1').addEventListener("click", ev=>{
-				$('obj').setAttribute("src",data.lod1.objpath)
-				setTimeout(function(){$('objm').setAttribute("obj-model","obj", "#obj")},500)	
-			})
-			$('b_vlod2').addEventListener("click", ev=>{
-				$('obj').setAttribute("src",data.lod2.objpath)
-				setTimeout(function(){$('objm').setAttribute("obj-model","obj", "#obj")},500)	
-			})
+			selected = document.querySelectorAll("#listc tr")[sidx]
+			selected.classList.add("selected")
+			selected.scrollIntoView({block:"center"})
+}
+function show(data) {
+	slist = data.list.slice()
+	slist.sort((a,b)=>{
+		const alod = a.lod1?a.lod1:a.lod2
+		const blod = b.lod1?b.lod1:b.lod2
+		if(!alod) return 1
+		if(!blod) return -1
+		return alod.bound.max[0]>blod.bound.max[0]?-1:1
+	})
+	slist.map((o,i)=>(o.sidx=i,o))
+	console.log(data)
+	const t1 =  new JhtmlTemplate($("t_info"))
+	t1.extract("info",data)
+	const t2 =  new JhtmlTemplate($("t_list"))
+	t2.extract("listc",{list:slist})
+	$('h_msg').innerHTML = "complete"
+	map.setmap(data.bound)
+
+	const listitem = $('listc').querySelectorAll("tr.listitem")
+	listitem.forEach(o=>{
+		o.addEventListener("click", ev=>{
+			let idx = parseInt(ev.target.parentNode.getAttribute("data-idx"))
+			sidx = parseInt(ev.target.parentNode.getAttribute("data-sidx"))
+			console.log(gml.raw[idx])
+			selitem(sidx)
+			$('dinput').focus()
 		})
 	})
+	
 }
 function readflie(target) {
 	return new Promise((resolve,reject)=> {
@@ -589,6 +613,7 @@ td {
   url:<input type=text size=60 id=i_src value=""><button id=b_load>LOAD</button> or <input type=file id=i_file><span id=h_msg></span><br/>
 
   <button id=b_mkall><a href="" id=a_downall download="data-all.obj">download all .obj</a></button>
+  	<input type=text id=dinput style="width:0;height:0;opacity:0">
 </div>
 <div id=main>
 	<div id=left>
