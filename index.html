@@ -8,28 +8,42 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://aframe.io/releases/1.2.0/aframe.min.js"></script>
-<script type="text/javascript">
-$ = id => document.getElementById(id)
-let rawdata
-let gml 
-let alldata 
-let map
-let fname 
-	AFRAME.registerComponent('sinit',{
-		init:function() {
-			console.log("afinit")
-			this.el.addEventListener("wheel", ev=>{
-				const z = ev.deltaY
-				const pos = this.el.querySelector("a-camera").getAttribute("position")
-				pos.y += z*0.1
-				pos.z += z*0.1
-				this.el.querySelector("a-camera").setAttribute("position",pos)
-			})
-		}
-	})
+<script>
+// init for A-Frame 3D preview
+AFRAME.registerComponent('sinit',{
+	init:function() {
+		console.log("afinit")
+		const camrig = this.el.querySelector("a-camera")
+		this.el.addEventListener("wheel", ev=>{
+			const z = ev.deltaY
+			const pos = camrig.getAttribute("position")
+			pos.y += z*0.01
+			pos.z += z*0.01
+			camrig.setAttribute("position",pos)
+		})
+
+		this.el.addEventListener("enter-vr", ev=>{
+			const p = camrig.getAttribute("position")
+			$('root').setAttribute("position", {x:0,y:-0.5,z:-2})
+		})
+		this.el.addEventListener("exit-vr", ev=>{
+			const p = camrig.getAttribute("position")
+			$('root').setAttribute("position", {x:0,y:0,z:0})	
+		})
+	}
+})
+</script>
+<script type="module">
+import {PGML} from './pgml.js'
+
+const $ = id => document.getElementById(id)
+
 onload = function() {
-	gml = new PGML()
-	map = new LMap('map')
+let rawdata
+let alldata
+let fname = "source.gml"
+	const gml = new PGML()
+	const map = new LMap('map')
 	let sidx = 0
 	let slist 
 	let selected 
@@ -39,16 +53,19 @@ onload = function() {
 		$('info').innerHTML = "" 
 		$('listc').innerHTML = ""
 		$('detail').innerHTML = "" 
-		loadAjax($('i_src').value).then(d=>{
+		const src = $('i_src').value
+		loadAjax(src).then(d=>{
+			$('h_msg').innerHTML = "...parsing"
+			const sp = src.split("/")
+			fname = sp[sp.length-1]
 			rawdata = d 
-			alldata = gml.parse(d)
+			alldata = gml.parse_bldg(d)
 			show(alldata)
 		}).catch(err=> {
 			$('h_msg').innerHTML = err
 		})
 	})
 	// file load
-	fname = "" 
 	$('i_file').addEventListener("input", ev=>{
 		if(ev.target.value!="")
 			fname = ev.target.files[0].name
@@ -58,32 +75,11 @@ onload = function() {
 			$('detail').innerHTML = "" 
 			readflie(ev.target).then(d=>{
 				rawdata = d 
-				alldata = gml.parse(d)
+				alldata = gml.parse_bldg(d)
 				show(alldata)
 			})
 	})
-	// export obj file 
-	$('b_mkall').addEventListener("click", ev=>{
-		const bound = alldata.bound 
-		const obj = new OBJM([bound.center[0],bound.center[1],0])
-		alldata.list.forEach(o=>{
-			if(!o.lod1) return 
-			opt = {} 
-			if(o.attr) {
-				opt.meta = {bid:o.attr.bid}
-				opt.group = o.attr.bid
-			}
-			if(o.lod1) {
-				opt.meta.lat=o.lod1.bound.center[0]
-				opt.meta.lng=o.lod1.bound.center[1]
-				opt.meta.height=o.lod1.bound.center[2]
-			}
-			obj.add(o.lod1.surface,opt)
-		})
-		const r = obj.makeobj({meta:{source:fname,lat:bound.center[0],lng:bound.center[1]}})
-		$('a_downall').download = fname.replace(".gml",".obj")
-		$('a_downall').href = "data:text/plain;charset=UTF-8,"+r
-	})
+
 	function viewmodel(d) {
 		if(!d) return 
 		$('obj').setAttribute("src",d.objpath)
@@ -95,6 +91,7 @@ onload = function() {
 	$('b_vlod2').addEventListener("click", ev=>{
 		viewmodel(slist[sidx].lod2)
 	})
+	// key shortcut
 	$('dinput').addEventListener("keyup", ev=>{
 		if(ev.keyCode==38 || ev.keyCode==40) {
 			sidx += ev.keyCode-39
@@ -123,51 +120,92 @@ onload = function() {
 		 $('dinput').focus()
 		}
 	})
+	// export obj file 
+	$('b_mkall').addEventListener("click", ev=>{
+		const all = []
+		const m = document.querySelector("input[name=omode]:checked")
+		let mode = (m)?m.value:3
+		const center = [alldata.bound.center[0],alldata.bound.center[1],0]
+		const obj = new OBJM(center)
+
+		alldata.list.forEach(o=>{
+			console.log(o.attr.bid)
+			if(mode&2 && o.lod2) {
+				const sl = []
+				for(let s in o.lod2.surface) {
+					o.lod2.surface[s].reduce((a,v)=>{a.push(v.node[0].poly);return a},sl)
+				}
+				obj.add(sl,{meta:{bid:o.attr.bid}
+//					,uv:o.lod2.bound.center
+					})
+			} else if(mode&1 && o.lod1) {
+				obj.add(o.lod1.surface,{meta:{bid:o.attr.bid}
+//					,uv:o.lod1.bound.center
+					})
+			}
+		})
+		const objfile = obj.makeobj({meta:
+			{source:fname, lat:center[0],lng:center[1],height:0}})
+		$('a_downall').download = fname.replace(".gml",".obj")
+		$('a_downall').href = "data:text/plain;charset=UTF-8,"+objfile
+	})
+	
 // set selected item
 function selitem(sel,scroll=true) {
 	sidx = sel
-	data = slist[sidx]
-			console.log(data)
-			const t =  new JhtmlTemplate($("t_detail"))
-			t.extract("detail",data)
-
-			if(data.lod0) {
-				let lod0 = data.lod0.flat()
-				const bound = gml.boundbox(lod0)
-				map.setMarker([bound.center[0],bound.center[1]])
-				map.setbuild(lod0.map(v=>[v[0],v[1]]))
-			}
-			if(data.lod1) {
-				const l1 = data.lod1 
-				const obj = new OBJM([l1.bound.center[0],l1.bound.center[1],l1.bound.min[2]])
-				obj.add(l1.surface)
-				const objfile = obj.makeobj({meta:
-					{source:fname,bid:data.attr.bid, lat:l1.bound.center[0],lng:l1.bound.center[1],height:l1.bound.min[2]}})
-				const objpath = "data:text/plane;charset=UTF-8,"+objfile
-				data.lod1.objpath = objpath 
-				$('a_down1').href = objpath 
-				$('a_down1').download = data.attr.bid+"-lod1.obj"
-			}
-			if(data.lod2) {
-				const bound = data.lod2.bound 
-				const obj = new OBJM([bound.center[0],bound.center[1],bound.min[2]])
-				for(let s in data.lod2.surface) {
-					obj.add(data.lod2.surface[s].reduce((a,v)=>{a.push(v.node[0].poly);return a},[]),
-						{group:s})
-				}
-				const objfile = obj.makeobj({meta:
-					{source:fname,bid:data.attr.bid, lat:bound.center[0],lng:bound.center[1],height:bound.min[2]}})
-				const objpath = "data:text/plane;charset=UTF-8,"+objfile
-				data.lod2.objpath = objpath 
-				$('a_down2').href = objpath 
-				$('a_down2').download = data.attr.bid+"-lod2.obj"
-			}
-			if(data.lod2) viewmodel(data.lod2)
-			else if(data.lod1) viewmodel(data.lod1)
-			if(selected) selected.classList.remove("selected")
-			selected = document.querySelectorAll("#listc tr")[sidx]
-			selected.classList.add("selected")
-			if(scroll) selected.scrollIntoView({block:"center"})
+	const data = slist[sidx]
+	console.log(data)
+	const t =  new JhtmlTemplate($("t_detail"))
+	let bound 
+	if(data.lod0) {
+		let lod0 = data.lod0.flat()
+		map.setbuild(lod0.map(v=>[v[0],v[1]]))
+	}
+	if(data.lod1) {
+		bound = data.lod1.bound 
+		data.lod1.objpath = "data:text/plane;charset=UTF-8,"+mkobjlod1(data)
+		$('a_down1').href = data.lod1.objpath 
+		$('a_down1').download = data.attr.bid+"-lod1.obj"
+	}
+	if(data.lod2) {
+		if(!bound) bound = data.lod2.bound 
+		data.lod2.objpath = "data:text/plane;charset=UTF-8,"+mkobjlod2(data)
+		$('a_down2').href = data.lod2.objpath 
+		$('a_down2').download = data.attr.bid+"-lod2.obj"
+	}
+	map.setMarker([bound.center[0],bound.center[1]])
+	data.bound = bound 
+	t.extract("detail",data)
+	
+	if(data.lod2) viewmodel(data.lod2)
+	else if(data.lod1) viewmodel(data.lod1)
+	if(selected) selected.classList.remove("selected")
+	selected = document.querySelectorAll("#listc tr")[sidx]
+	selected.classList.add("selected")
+	if(scroll) selected.scrollIntoView({block:"center"})
+}
+// make .obj data
+function mkobjlod1(data,center) {
+	const l1 = data.lod1
+	if(!center) center = [l1.bound.center[0],l1.bound.center[1],l1.bound.min[2]]
+	const obj = new OBJM(center)
+	obj.add(l1.surface)
+	const objfile = obj.makeobj({meta:
+		{source:fname,bid:data.attr.bid, lat:l1.bound.center[0],lng:l1.bound.center[1],
+			height:l1.bound.min[2]}})
+	return objfile
+}
+function mkobjlod2(data,center) {
+	const l2 = data.lod2
+	if(!center) center = [l2.bound.center[0],l2.bound.center[1],l2.bound.min[2]]
+	const obj = new OBJM(center)
+	for(let s in l2.surface) {
+		obj.add(l2.surface[s].reduce((a,v)=>{a.push(v.node[0].poly);return a},[]),{group:s})
+	}
+	const objfile = obj.makeobj({meta:
+					{source:fname,bid:data.attr.bid, lat:l2.bound.center[0],lng:l2.bound.center[1],
+						height:l2.bound.min[2]}})
+	return objfile
 }
 // show list
 function show(data) {
@@ -199,6 +237,7 @@ function show(data) {
 		})
 	})
 }
+// read local file
 function readflie(target) {
 	return new Promise((resolve,reject)=> {
 		const files = target.files
@@ -212,6 +251,7 @@ function readflie(target) {
 		reader.readAsText(files[0])	
 	})
 }
+// read online file
 function loadAjax(src,opt) {
 	return new Promise((resolve,reject)=> {
 		const req = new XMLHttpRequest();
@@ -232,184 +272,13 @@ function loadAjax(src,opt) {
 }
 } // onload
 
-// parse PLATEAU CityGML
-class PGML {
-parse(doc) {
-	const bound = {lc:this.parseaxis(this.getxml(doc,"gml:boundedBy/gml:lowerCorner")[0])[0],
-		uc:this.parseaxis(this.getxml(doc,"gml:boundedBy/gml:upperCorner")[0])[0]}
-	bound.center = [(bound.uc[0]+bound.lc[0])/2,(bound.uc[1]+bound.lc[1])/2,(bound.uc[2]+bound.lc[2])/2]
-	const m = doc.getElementsByTagName("core:cityObjectMember")
-	this.raw = m 
-	const o = []
-	let lod1poly = 0 
-	let lod2poly = 0
-	let lod2count = 0 
-	let el 
-	for(let i=0;i<m.length;i++) {
-		el = {idx:i} 
-		// get metadata
-		const attr = this.getxml(m[i],"bldg:Building/gen:stringAttribute/gen:value")[0]
-		const at = {id:attr.attr["gml:id"]}
-		let bid = "" 
-		at.string = attr.node.map(v=>{
-			if(v.attr.name=="建物ID") bid= v.node[0] ;
-			return {name:v.attr.name,value:v.node[0]}
-		})
-		at.bid = bid 
-		const addr = this.getxml(m[i],"bldg:address/xAL:LocalityName")[0]
-		if(addr) at.addr = addr[0] 
-		const roof = this.getxml(m[i],"uro:buildingRoofEdgeArea")
-		if(roof) at.buildingRoofEdgeArea = roof[0]
-		const zone = this.getxml(m[i],"uro:districtsAndZonesType")
-		if(zone) at.districtsAndZonesType = zone[0]
-		const height = this.getxml(m[i],"bldg:measuredHeight")
-		if(height) at.measuredHeight = height[0]
-		let name = this.getxml(m[i],"gml:name")
-		if(Array.isArray(name)) name = name[0]
-		if(name) at.name = name
-		el["attr"] = at 
-		
-		//get LOD0
-		let lod0 = this.getxml(m[i],"bldg:lod0RoofEdge/gml:posList")
-		if(lod0.length>0) {
-			if(Array.isArray(lod0[0])) lod0 = lod0[0]
-			lod0 = lod0.map(x=>this.parseaxis(x))
-			el["lod0"] = lod0
-		}
-		//get LOD1
-		let lod1 = this.getxml(m[i],"bldg:lod1Solid/gml:posList")
-		if(lod1.length>0) {
-			lod1 = lod1[0]
-			let poly = 0 
-			for(let l=0;l<lod1.length;l++) {
-				lod1[l] = this.parseaxis(lod1[l])
-				poly += lod1[l].length-3
-			}
-			lod1poly += poly 
-			
-			el["lod1"] = {count:lod1.length,poly:poly,surface:lod1,
-				bound:this.boundbox(lod1.flat())}
-			
-		} 
-// 	else console.log(m[i])
-		// get LOD2
-		const lod2 = this.getxml(m[i],"bldg:lod2Solid/gml:surfaceMember")
-		if(lod2.length>0) {
-			el["lod2"] = {count:lod2[0].length,surfaceid:lod2[0].map(v=>v.attr['xlink:href'])}
-			el["hazlod2"] = "L2"
-			lod2count++ 
-			if(1) {
-				el.lod2.surface = {}
-				const roofs = this.getxml(m[i],"bldg:RoofSurface/gml:Polygon/gml:LinearRing/gml:posList")
-				const walls = this.getxml(m[i],"bldg:WallSurface/gml:Polygon/gml:LinearRing/gml:posList")
-				const grounds = this.getxml(m[i],"bldg:GroundSurface/gml:Polygon/gml:LinearRing/gml:posList")
-				const outers = this.getxml(m[i],"bldg:OuterCeilingSurface/gml:Polygon/gml:LinearRing/gml:posList")
-				const outerf = this.getxml(m[i],"bldg:OuterFloorSurface/gml:Polygon/gml:LinearRing/gml:posList")
-				const closures = this.getxml(m[i],"bldg:ClosureSurface/gml:Polygon/gml:LinearRing/gml:posList")
-				const sl = []
-				let poly = 0
-				try{
-				const parselod2 = (surface)=> {
-					return surface.map(v=>{
-						const ret = (v.node)?v.node[0]:v[0]
-						ret.id = ret.attr['gml:id']
-						delete(ret.attr)
-						ret.node = ret.node.map(v=>{
-							const p = this.parseaxis(v.node)
-							sl.push(p)
-							poly += p.length-3
-							return {id:v.attr['gml:id'],poly:p}})
-						return ret 
-					})
-				}
-
-				if(roofs[0]) el.lod2.surface.roofs = parselod2(roofs)
-				if(walls[0]) el.lod2.surface.walls = parselod2(walls)
-				if(grounds[0]) el.lod2.surface.grounds = parselod2(grounds)
-				if(outers[0]) el.lod2.surface.outers = parselod2(outers)
-				if(outerf[0]) el.lod2.surface.outerf = parselod2(outerf)
-				if(closures[0]) el.lod2.surface.closures = parselod2(closures)
-				} catch(err) {console.log(err);console.log(el);console.log(m[i])}
-				el.lod2.bound = this.boundbox(sl.flat())
-				el.lod2.poly = poly 
-				lod2poly += poly 
-			}
-	//		console.log(bound)
-		}
-		o.push(el)
-	}
-	const list  = {bound:bound,count:o.length,lod2count:lod2count,lod1poly:lod1poly,lod2poly:lod2poly,list:o}
-	if(0) {
-		// get texture data
-		const tex =[]
-		const texe = doc.getElementsByTagName("app:ParameterizedTexture")
-		for(let i=0;i<texe.length;i++) {
-			const tiff = this.getxml(texe[i],"app:imageURI")
-			const uv = this.getxml(texe[i],"app:target/app:textureCoordinates")
-			tex.push({tiff:tiff,uv:uv})
-		}
-		list.tex = tex
-	}
-	return list 
-}
-
-parseaxis(str) {
-	const s = str.toString().split(" ")
-	const r = []
-	for(let i=0;i<s.length;i+=3)
-	 r.push([parseFloat(s[i]),parseFloat(s[i+1]),parseFloat(s[i+2])])
-	return r 
-}
-boundbox(ax) {
-	const b = ax.reduce((a,v)=>{
-		if(v[0]>a.max[0]) a.max[0] = v[0]
-		if(v[1]>a.max[1]) a.max[1] = v[1]
-		if(v[2]>a.max[2]) a.max[2] = v[2]
-		if(v[0]<a.min[0]) a.min[0] = v[0]
-		if(v[1]<a.min[1]) a.min[1] = v[1]
-		if(v[2]<a.min[2]) a.min[2] = v[2]
-		return a 
-	},{min:[90,180,4000],max:[0,0,-100]})
-	b.center = [(b.max[0]+b.min[0])/2,(b.max[1]+b.min[1])/2,(b.max[2]+b.min[2])/2]
-	return b
-}
-getxml(doc,tagpath) {
-	const tags = tagpath.split("/")
-	function attr(attr) {
-		const at = {}
-		for(let i=0;i<attr.length;i++) at[attr[i].name] = attr[i].textContent 
-		return at
-	}
-	function query(base,tags) {
-		const tt = tags.slice()
-		const sel = tt.shift()
-		const ttl = tt.length 
-		let tl = []
-		const el = base.getElementsByTagName(sel)
-		for(let i=0;i<el.length;i++) {
-			if(ttl>0) {
-				if(el[i].attributes.length>0)
-					tl.push({attr:attr(el[i].attributes),node:query(el[i],tt)})
-				else tl.push(query(el[i],tt))
-			} else {
-				if(el[i].attributes.length>0) 
-					tl.push({attr:attr(el[i].attributes),html:el[i].innerHTML})
-				else tl.push(el[i].innerHTML)
-			}
-		}
-		return tl 
-	}
-	const ret = query(doc,tags)
-	return ret 
-}
-} //PGML
 
 //make obj file
 class OBJM {
-constructor(center) {
+constructor(center,vofs=0) {
 	this.center = center 
 	this.object=[]
-	this.vidx = 0
+	this.vidx = vofs
 	this.vertexes = []
 	this.surfaces = []
 }
@@ -418,36 +287,46 @@ add(surface,opt) {
 	const vl = []
 	const sl = []
 	surface.forEach(s=>{
-		const sf = [] 
+		const vf = [] 
 		s.forEach((v,i)=>{
 			if(i==s.length-1) return 
-			vl.push([(v[1]-this.center[1])*len.lng,(v[0]-this.center[0])*len.lat,v[2]-this.center[2]])
-			sf.push(this.vidx+1)
-			this.vidx++	
+			vf.push([(v[1]-this.center[1])*len.lng,(v[0]-this.center[0])*len.lat,v[2]-this.center[2]])
 		})
-		sl.push(sf)
+		vl.push(vf)
+		let  sf = this.polydiv(vf)
+//		let sf = [vf.map((v,i)=>i)]
+		sf.forEach(v=>sl.push(v.map(v=>v+this.vidx)))
+		this.vidx += vf.length
 	})
 	this.vertexes.push(vl)
 	this.surfaces.push(sl)
-	this.object.push({opt:opt,v:vl,s:sl})
+	this.object.push({opt:opt,v:vl.flat(),s:sl})
 //	console.log(this.vertexes)
 //	console.log(this.surfaces)
 }
 makeobj(opt) {
 	const l =[]
 	if(opt && opt.meta) l.push(this.setmeta(opt.meta))
-
+	let uvidx = 0
 	this.object.forEach(o=>{
 		if(o.opt && o.opt.meta) l.push(this.setmeta(o.opt.meta))
 		if(o.opt && o.opt.group) l.push("g "+o.opt.group)
 		o.v.forEach(v=>{
 			l.push("v "+v.map(a=>this.round(a)).join(" "))
 		})
+		if(o.opt && o.opt.uv) {
+			l.push("vt "+o.opt.uv[0]+" "+o.opt.uv[1])
+			uvidx++
+		}
 		o.s.forEach(s=>{
+			s = s.map(v=>(v+1))
+			if(o.opt && o.opt.uv) {
+				s = s.map(v=>v+"/"+uvidx)
+			}
 			l.push("f "+s.join(" "))
 		})
 	})
-
+//	console.log(l)
 	return l.join("\n")
 }
 setmeta(c) {
@@ -464,6 +343,86 @@ latlng2length(latlng) {
 	const er = 2*Math.PI*r/360
 	return {lng: Math.cos(latlng.lat / 180 * Math.PI) * er, lat:er}
 }	
+polydiv(v) {
+	function cross(p0,p1,p2) {
+		const v1 = [p1[0]-p0[0],p1[1]-p0[1],p1[2]-p0[2]]
+		const v2 = [p2[0]-p0[0],p2[1]-p0[1],p2[2]-p0[2]]
+		return  [	
+			v1[1]*v2[2] - v1[2] * v2[1],
+			v1[2]*v2[0] - v1[0] * v2[2],
+			v1[0]*v2[1] - v1[1] * v2[0] 
+		]		
+	}
+	function dot(v1,v2) {return v1[0]*v2[0]+v1[1]*v2[1]+v1[2]*v2[2]}
+
+	//頂点の双方向リンクリストを作る
+	let vl = v.map((v,i)=>{return {v:v,i:i}})
+	vl.forEach((v,i)=>{v.next=vl[i<vl.length-1?i+1:0],v.prev=vl[i>0?i-1:vl.length-1]})
+	//第１点を原点とする
+	const zv = v[0]
+	//原点からの距離で遠い順にソート
+	vl.sort((a,b)=>{
+		const da = Math.hypot(a.v[0]-zv[0],a.v[1]-zv[1],a.v[2]-zv[2])
+		const db = Math.hypot(b.v[0]-zv[0],b.v[1]-zv[1],b.v[2]-zv[2])
+		return db-da 
+	})
+
+	let rv = [] 
+	let pi = vl[0] //一番遠い点から始める
+	let cr = cross(pi.v,pi.next.v,pi.prev.v)	//最初の三角の外積
+	let sc = 0 
+	while(true) {
+//		console.log(vl)
+		const vi = pi.v	//注目点座標
+		const vi1 = pi.next.v //次の点座標
+		const vi2 = pi.prev.v	//前の点座標
+ 
+		//cross(lv1-lv,lv2-lv) 
+		const c = cross(vi,vi1,vi2)
+		if(dot(c,cr)<0) {
+//			console.log("reversse tri!")
+			pi = pi.next
+			if(++sc > vl.length) {
+				console.log("**********err")
+				console.log(vl)
+				break 
+			} 
+			continue
+		}
+		// 三角形の中に他の点があるか調べる
+		//現在の三角以外の各点を調べる 
+		let f = false 
+		for(let i =0,pt = pi.next.next ;i<vl.length-3;i++) {
+			const c1 = cross(vi,pt.v,vi2)
+			const c2 = cross(vi1,pt.v,vi)
+			const c3 = cross(vi2,pt.v,vi1)
+
+			if(dot(c1,c2)>0 && dot(c1,c3)>0 && dot(c2,c3)>0) {
+//				console.log("inner point!")
+				f = true 
+				break 
+			}
+			pt = pt.next 
+		}
+		//他の点があれば 次の点に移動
+		if(f) {
+			pi = pi.next 
+			continue		
+		}
+		// なかったら　三角を取り出して注視点を取り除く
+		rv.push([pi.i,pi.next.i,pi.prev.i])
+		pi.prev.next = pi.next
+		pi.next.prev = pi.prev 
+		vl = vl.filter(v=>v!==pi)
+		
+		// 残りが2点なら終了
+		if(vl.length<3) break  
+		pi = vl[0] // 次の点に移動	
+		sc = 0 	
+	}
+	return rv 
+}	
+
 } // OBJM
 
 // draw map using leaflet
@@ -529,7 +488,7 @@ setmap(bound) {
 	const b = bound 
 	if(this.arealine) this.arealine.remove()
 	this.arealine = L.polyline([
-		[b.lc[0],b.lc[1]],[b.lc[0],b.uc[1]],[b.uc[0],b.uc[1]],[b.uc[0],b.lc[1]],[b.lc[0],b.lc[1]]
+		[b.min[0],b.min[1]],[b.min[0],b.max[1]],[b.max[0],b.max[1]],[b.max[0],b.min[1]],[b.min[0],b.min[1]]
 	]
 	, {color: 'red'}).addTo(this.map)
 	this.map.fitBounds(this.arealine.getBounds());
@@ -627,8 +586,10 @@ td {
 <body>
 <div id=head>
   url:<input type=text size=60 id=i_src value=""><button id=b_load>LOAD</button> or <input type=file id=i_file><span id=h_msg></span><br/>
-
-  <button id=b_mkall><a href="" id=a_downall download="data-all.obj">download all .obj</a></button>
+	<input type=radio name=omode value=1>LOD1
+	<input type=radio name=omode value=2>LOD2
+	<input type=radio name=omode value=3 checked>LOD1/2
+  <button id=b_mkall><a href="" id=a_downall download="data-all.obj">1区画分のobjをダウンロード</a></button>
   	<input type=text id=dinput style="width:0;height:0;opacity:0">
 </div>
 <div id=main>
@@ -659,13 +620,14 @@ td {
 				    <a-asset-item id="obj" src="">
 				</a-assets>
 				<a-sky color="#4df"></a-sky>
-				<!--floor-->
-				<a-plane position="0 -0.001 0" rotation="-90 0 0" width="20" height="20" material="shader:flat;src: #floortex;repeat:2 2;color:#888"></a-plane>
-					<a-entity id="base" scale="0.1 0.1 0.1" rotation="-90 0 0"
+				<a-entity id=root>
+				<a-plane position="0 -0.001 0" rotation="-90 0 0" width="2" height="2" material="shader:flat;src: #floortex;repeat:2 2;color:#888"></a-plane>
+					<a-entity id="base" scale="0.01 0.01 0.01" rotation="-90 0 0"
 						animation="property: rotation; to:-90 360 0; easing:linear;loop: true; dur: 10000">
 						<a-entity id=objm obj-model="obj:#obj" material="opacity:1"></a-entity>
 					</a-entity>
-				<a-camera position="0 4 4" rotation="60 0 0"></a-camera>
+				</a-entity>
+				<a-camera id=cam position="0 0.4 0.4" rotation="60 0 0"></a-camera>
 				<a-light color="white" position="1 3 2 "></a-light>
 				</a-scene>
 			</div>
@@ -679,8 +641,8 @@ td {
 <li>lod2　count: [val lod2count]</li>
 <li>lod1　△poly: [val lod1poly]</li>
 <li>lod2　△poly: [val lod2poly]</li>
-<li>bound min [val bound/lc/0] [val bound/lc/1]<br/>[val bound/lc/2]<br/></li>
-<li>bound max [val bound/uc/0] [val bound/uc/1]<br/>[val bound/uc/2]<br/></li>
+<li>bound min [val bound/min/0] [val bound/min/1]<br/>[val bound/min/2]<br/></li>
+<li>bound max [val bound/max/0] [val bound/max/1]<br/>[val bound/max/2]<br/></li>
 </ul>
 </div>
 
@@ -703,8 +665,8 @@ td {
 
 <div class=template id=t_detail>
 <table>
-<tr><td>bound min</td><td>[val lod1/bound/min/0] [val lod1/bound/min/1]<br/> [val lod1/bound/min/2]</td></tr>
-<tr><td>bound max</td><td>[val lod1/bound/max/0] [val lod1/bound/max/1]<br/> [val lod1/bound/max/2]</td></tr>
+<tr><td>bound min</td><td>[val bound/min/0] [val bound/min/1]<br/> [val bound/min/2]</td></tr>
+<tr><td>bound max</td><td>[val bound/max/0] [val bound/max/1]<br/> [val bound/max/2]</td></tr>
 <tr><td>lod1 surface</td><td>[val lod1/count] △poly:[val lod1/poly] </td></tr>
 <!--[def hazlod2]-->
 <tr><td>lod2 surface</td><td>[val lod2/count] △poly:[val lod2/poly] </td></tr>
