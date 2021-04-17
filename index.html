@@ -131,18 +131,25 @@ let fname = "source.gml"
 
 		alldata.list.forEach(o=>{
 			console.log(o.attr.bid)
+			const opt = {meta:{bid:o.attr.bid}
+//					,uv:o.lod1.bound.center
+					}
 			if(mode&2 && o.lod2) {
 				const sl = []
 				for(let s in o.lod2.surface) {
 					o.lod2.surface[s].reduce((a,v)=>{a.push(v.node[0].poly);return a},sl)
 				}
-				obj.add(sl,{meta:{bid:o.attr.bid}
-//					,uv:o.lod2.bound.center
-					})
+				obj.add(sl,opt)
 			} else if(mode&1 && o.lod1) {
-				obj.add(o.lod1.surface,{meta:{bid:o.attr.bid}
-//					,uv:o.lod1.bound.center
-					})
+				if($('lod1d').checked && o.attr?.measuredHeight?.value>0) {
+					const mh = parseFloat(o.attr.measuredHeight.value)
+					const oh = o.lod1.bound.max[2]-o.lod1.bound.min[2]
+					if(mh>oh+10) {
+						opt.hdiff = {height:o.lod1.bound.max[2],nheight:o.lod1.bound.min[2] + mh} 
+						console.log("height "+oh + " to "+mh ) 
+					}
+				}
+				obj.add(o.lod1.surface,opt)
 			}
 		})
 		const objfile = obj.makeobj({meta:
@@ -188,9 +195,18 @@ function selitem(sel,scroll=true) {
 // make .obj data
 function mkobjlod1(data,center) {
 	const l1 = data.lod1
+	const opt = {}
 	if(!center) center = [l1.bound.center[0],l1.bound.center[1],l1.bound.min[2]]
+	if($('lod1d').checked && data.attr?.measuredHeight?.value>0) {
+		const mh = parseFloat(data.attr.measuredHeight.value)
+		const oh = l1.bound.max[2]-l1.bound.min[2]
+		if(mh>oh+10) {
+			opt.hdiff = {height:l1.bound.max[2],nheight:l1.bound.min[2] + mh} 
+			console.log("height "+oh + " to "+mh ) 
+		}
+	}
 	const obj = new OBJM(center)
-	obj.add(l1.surface)
+	obj.add(l1.surface,opt)
 	const objfile = obj.makeobj({meta:
 		{source:fname,bid:data.attr.bid, lat:l1.bound.center[0],lng:l1.bound.center[1],
 			height:l1.bound.min[2]}})
@@ -435,10 +451,11 @@ td {
 </head>
 <body>
 <div id=head>
-  url:<input type=text size=60 id=i_src value=""><button id=b_load>LOAD</button> or <input type=file id=i_file><span id=h_msg></span><br/>
+  url:<input type=text size=60 id=i_src value="https://wakufactory.sakura.ne.jp/plateau/data/bldg/53393585_bldg_6697_op2.gml"><button id=b_load>LOAD</button> or <input type=file id=i_file><span id=h_msg></span><br/>
 	<input type=radio name=omode value=1>LOD1
 	<input type=radio name=omode value=2>LOD2
 	<input type=radio name=omode value=3 checked>LOD1/2
+	<input type=checkbox id=lod1d>LOD1高さ補正
   <button id=b_mkall><a href="" id=a_downall download="data-all.obj">1区画分のobjをダウンロード</a></button>
   	<input type=text id=dinput style="width:0;height:0;opacity:0">
 </div>
@@ -501,7 +518,7 @@ td {
 <!--[each list]-->
 <tr class=listitem data-idx="[val list/idx]" data-sidx="[val list/sidx]" >
 <td>[val list/attr/bid]</td>
-<td>[val list/attr/addr/html]</td>
+<td>[val list/attr/addr/value]</td>
 <td>[val list/lod1/count]</td>
 <td>
 <!--[def list/attr/name]-->
@@ -525,10 +542,10 @@ td {
 <table>
 <tr><td>name</td><td>[val attr/name]</td></tr>
 <tr><td>uuid</td><td>[val attr/id]</td></tr>
-<tr><td>address</td><td>[val attr/addr/html]</td></tr>
-<tr><td>roof area</td><td>[val attr/buildingRoofEdgeArea/html]</td></tr>
-<tr><td>height</td><td>[val attr/measuredHeight/html]</td></tr>
-<tr><td>zone type</td><td>[val attr/districtsAndZonesType/html]</td></tr>
+<tr><td>address</td><td>[val attr/addr/value]</td></tr>
+<tr><td>roof area</td><td>[val attr/buildingRoofEdgeArea/value]</td></tr>
+<tr><td>height</td><td>[val attr/measuredHeight/value]</td></tr>
+<tr><td>zone type</td><td>[val attr/districtsAndZonesType/value]</td></tr>
 <!--[each attr/string]-->
 <tr><td>[val attr/string/name]</td><td>[val attr/string/value]</td></tr>
 <!--[/each]-->

@@ -167,7 +167,7 @@ getxml(doc,tagpath) {
 				else tl.push(query(el[i],tt))
 			} else {
 				if(el[i].attributes.length>0) 
-					tl.push({attr:attr(el[i].attributes),html:el[i].innerHTML})
+					tl.push({attr:attr(el[i].attributes),value:el[i].innerHTML})
 				else tl.push(el[i].innerHTML)
 			}
 		}

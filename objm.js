@@ -16,7 +16,9 @@ add(surface,opt) {
 		const vf = [] 
 		s.forEach((v,i)=>{
 			if(i==s.length-1) return 
-			vf.push([(v[1]-this.center[1])*len.lng,(v[0]-this.center[0])*len.lat,v[2]-this.center[2]])
+			let  h = v[2]
+			if(opt.hdiff && h == opt.hdiff.height) h = opt.hdiff.nheight  
+			vf.push([(v[1]-this.center[1])*len.lng,(v[0]-this.center[0])*len.lat,h-this.center[2]])
 		})
 		vl.push(vf)
 		let  sf = this.polydiv(vf)
