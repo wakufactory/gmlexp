@@ -131,18 +131,26 @@ let fname = "source.gml"
 
 		alldata.list.forEach(o=>{
 			console.log(o.attr.bid)
-			const opt = {meta:{bid:o.attr.bid}
-//					,uv:o.lod1.bound.center
-					}
+			const mh = parseFloat(o.attr?.measuredHeight?.value)
+
 			if(mode&2 && o.lod2) {
 				const sl = []
 				for(let s in o.lod2.surface) {
-					o.lod2.surface[s].reduce((a,v)=>{a.push(v.node[0].poly);return a},sl)
+					o.lod2.surface[s].forEach(v=>{
+						v.forEach(a=>{
+							sl.push(a.node[0].poly)
+						})
+					})
+				}
+				const opt = {meta:{bid:o.attr.bid}
+					,uv:[o.lod2.bound.min[2],mh]
 				}
 				obj.add(sl,opt)
 			} else if(mode&1 && o.lod1) {
-				if($('lod1d').checked && o.attr?.measuredHeight?.value>0) {
-					const mh = parseFloat(o.attr.measuredHeight.value)
+				const opt = {meta:{bid:o.attr.bid}
+					,uv:[o.lod1.bound.min[2],mh]
+				}
+				if($('lod1d').checked && mh>0) {
 					const oh = o.lod1.bound.max[2]-o.lod1.bound.min[2]
 					if(mh>oh+10) {
 						opt.hdiff = {height:o.lod1.bound.max[2],nheight:o.lod1.bound.min[2] + mh} 
@@ -217,7 +225,13 @@ function mkobjlod2(data,center) {
 	if(!center) center = [l2.bound.center[0],l2.bound.center[1],l2.bound.min[2]]
 	const obj = new OBJM(center)
 	for(let s in l2.surface) {
-		obj.add(l2.surface[s].reduce((a,v)=>{a.push(v.node[0].poly);return a},[]),{group:s})
+		const p = []
+		l2.surface[s].forEach(v=>{
+			v.forEach(a=>{
+				p.push(a.node[0].poly)
+			})
+		})
+		obj.add(p,{group:s})
 	}
 	const objfile = obj.makeobj({meta:
 					{source:fname,bid:data.attr.bid, lat:l2.bound.center[0],lng:l2.bound.center[1],
@@ -451,7 +465,7 @@ td {
 </head>
 <body>
 <div id=head>
-  url:<input type=text size=60 id=i_src value="https://wakufactory.sakura.ne.jp/plateau/data/bldg/53393585_bldg_6697_op2.gml"><button id=b_load>LOAD</button> or <input type=file id=i_file><span id=h_msg></span><br/>
+  url:<input type=text size=60 id=i_src value=""><button id=b_load>LOAD</button> or <input type=file id=i_file><span id=h_msg></span><br/>
 	<input type=radio name=omode value=1>LOD1
 	<input type=radio name=omode value=2>LOD2
 	<input type=radio name=omode value=3 checked>LOD1/2

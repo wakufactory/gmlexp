@@ -38,24 +38,27 @@ parse_bldg(doc) {
 		
 		//get LOD0
 		let lod0 = this.getxml(m[i],"bldg:lod0RoofEdge/gml:posList")
+		if(lod0.length==0) lod0 = this.getxml(m[i],"bldg:lod0FootPrint/gml:posList")
 		if(lod0.length>0) {
 			if(Array.isArray(lod0[0])) lod0 = lod0[0]
 			lod0 = lod0.map(x=>this.parseaxis(x))
 			el["lod0"] = lod0
-		}
+		} 
 		//get LOD1
 		let lod1 = this.getxml(m[i],"bldg:lod1Solid/gml:posList")
 		if(lod1.length>0) {
-			lod1 = lod1[0]
 			let poly = 0 
-			for(let l=0;l<lod1.length;l++) {
-				lod1[l] = this.parseaxis(lod1[l])
-				poly += lod1[l].length-3
-			}
+			const l1 = [] 
+			lod1.forEach(l=>{
+				l.forEach(ll=>{
+					l1.push(this.parseaxis(ll))
+					poly += ll.length-3
+				})
+			})
 			lod1poly += poly 
 			
-			el["lod1"] = {count:lod1.length,poly:poly,surface:lod1,
-				bound:this.boundbox(lod1.flat())}
+			el["lod1"] = {count:l1.length,poly:poly,surface:l1,
+				bound:this.boundbox(l1.flat())}
 			
 		} 
 // 	else console.log(m[i])
@@ -77,16 +80,20 @@ parse_bldg(doc) {
 				let poly = 0
 				try{
 				const parselod2 = (surface)=> {
+//					console.log(surface)
 					return surface.map(v=>{
-						const ret = (v.node)?v.node[0]:v[0]
-						ret.id = ret.attr['gml:id']
-						delete(ret.attr)
-						ret.node = ret.node.map(v=>{
-							const p = this.parseaxis(v.node)
-							sl.push(p)
-							poly += p.length-3
-							return {id:v.attr['gml:id'],poly:p}})
-						return ret 
+						const vv = (v.node)?v.node:v 
+						return vv.map(ret=>{
+							ret.id = ret.attr['gml:id']
+							delete(ret.attr)
+							const n = ret.node.map(v=>{
+								const p = this.parseaxis(v.node)
+								sl.push(p)
+								poly += p.length-3
+								return {id:v.attr['gml:id'],poly:p}})
+							ret.node = n 
+							return ret 
+						})
 					})
 				}
 
