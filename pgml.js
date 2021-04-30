@@ -51,8 +51,9 @@ parse_bldg(doc) {
 			const l1 = [] 
 			lod1.forEach(l=>{
 				l.forEach(ll=>{
-					l1.push(this.parseaxis(ll))
-					poly += ll.length-3
+					const ax = this.parseaxis(ll)
+					l1.push(ax)
+					poly += ax.length-3
 				})
 			})
 			lod1poly += poly 
